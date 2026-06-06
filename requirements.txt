@@ -1,0 +1,48 @@
+# Core Dependencies
+python==3.10.*
+
+# Computer Vision & Detection
+opencv-python==4.8.1.78
+opencv-contrib-python==4.8.1.78
+ultralytics==8.0.223
+torch==2.1.0
+torchvision==0.16.0
+torchaudio==2.1.0
+
+# Tracking & Filtering
+scipy==1.11.4
+numpy==1.24.3
+scikit-learn==1.3.2
+
+# Data Processing
+pandas==2.1.3
+pandas-stubs==2.1.1.230821
+
+# Utilities
+tqdm==4.66.1
+Pillow==10.1.0
+matplotlib==3.8.2
+seaborn==0.13.0
+
+# Data Validation
+pydantic==2.5.0
+
+# Logging & Config
+python-dotenv==1.0.0
+pyyaml==6.0.1
+
+# Development
+pytest==7.4.3
+pytest-cov==4.1.0
+black==23.12.0
+flake8==6.1.0
+mypy==1.7.1
+ipython==8.18.1
+jupyter==1.0.0
+nbformat==5.9.2
+
+# Database
+sqlite3-python==1.0.0
+
+# Deep SORT (if available)
+# deep-sort-realtime==1.3.0  # Alternative: install from source
