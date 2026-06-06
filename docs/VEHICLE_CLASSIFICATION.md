@@ -1,874 +1,715 @@
-# Vehicle Detection & Classification Implementation Guide
+# Vehicle Detection & Classification - Realistic UAV Implementation
 
-**Comprehensive Implementation for Detection & Parameter Extraction**  
-*FHWA 13-Class + TRL/ORN11 Standards + Pedestrian Detection*
+**Practical Implementation for High-Altitude UAV Traffic Analysis**  
+*Based ONLY on Visible Physical Characteristics: Length and Width*
 
 ---
 
 ## Table of Contents
 
-1. [System Architecture](#system-architecture)
-2. [YOLO-Based Base Detection](#yolo-based-base-detection)
-3. [Vehicle Classification Pipeline](#vehicle-classification-pipeline)
-4. [Pedestrian & Cyclist Detection](#pedestrian--cyclist-detection)
-5. [Multi-Standard Output](#multi-standard-output)
-6. [Confidence & Quality Management](#confidence--quality-management)
-7. [Data Export Format](#data-export-format)
-8. [Implementation Roadmap](#implementation-roadmap)
+1. [Core Principle](#core-principle)
+2. [What IS Actually Visible from UAV](#what-is-actually-visible-from-uav)
+3. [Classification System (Length + Width Based)](#classification-system-length--width-based)
+4. [Detection Implementation](#detection-implementation)
+5. [Category Definitions](#category-definitions)
+6. [Pedestrian & Cycle Detection](#pedestrian--cycle-detection)
+7. [Implementation Architecture](#implementation-architecture)
+8. [Calibration Procedure](#calibration-procedure)
+9. [Quality Assurance](#quality-assurance)
 
 ---
 
-## System Architecture
+## Core Principle
 
-### Complete Detection Pipeline
+**What matters at UAV altitude:**
+- Vehicle **footprint** (length × width as seen from directly above)
+- That's it. This is the ONLY reliable visible feature.
+
+**What we cannot reliably see:**
+- ❌ Passenger windows (too small, variable angles)
+- ❌ Vehicle height (2D top-down view doesn't show height)
+- ❌ Wheels/axles (under vehicle body)
+- ❌ Cargo area details (orientation dependent)
+- ❌ Markings/branding (poor resolution from altitude)
+- ❌ Pedestrian characteristics (all look the same from above)
+- ❌ Motorcycle vs bicycle (can't distinguish)
+
+---
+
+## What IS Actually Visible from UAV
+
+### Directly Observable at 30-50m Altitude
+
+| Feature | Visible | Confidence | Use |
+|---------|---------|------------|-----|
+| **Vehicle length (L/W direction)** | ✅ Yes | High | PRIMARY classifier |
+| **Vehicle width (perpendicular)** | ✅ Yes | High | PRIMARY classifier |
+| **Vehicle footprint area** | ✅ Yes | High | Secondary classifier |
+| **Aspect ratio (L:W ratio)** | ✅ Yes | High | Shape indicator |
+| **Overall silhouette shape** | ✅ Yes | Medium | Rough type hint |
+| **Color** | ✅ Yes | Medium | Reference only |
+| **Motion pattern** | ✅ Yes | High | Speed/direction |
+
+### NOT Reliably Observable
+
+| Feature | Why Not | Impact |
+|---------|--------|--------|
+| **Wheels/Tires** | Under vehicle body | Cannot count axles/tires |
+| **Height** | 2D top-down view | No vertical dimension |
+| **Windows** | Too small/resolution | Cannot count or identify |
+| **Doors** | Low resolution | Cannot distinguish |
+| **Cargo** | Obscured | Cannot see inside/under |
+| **Age/gender** | Pedestrians indistinguishable | Cannot sub-categorize |
+| **Motorcycle vs Bicycle** | Similar sizes/speeds in roundabout | Cannot reliably separate |
+
+---
+
+## Classification System (Length + Width Based)
+
+### Single Decision Tree: L × W Dimensions
 
 ```
-Raw UAV Frame (1920x1080, 30 FPS)
+Vehicle Detected (Bounding Box)
     ↓
-┌───────────────────────────────────────────┐
-│   YOLO v8 Person-Vehicle Detection       │
-│   (Pre-trained on COCO + custom traffic) │
-├───────────────────────────────────────────┤
-│ Outputs:                                  │
-│ - Bounding boxes for all road users       │
-│ - Confidence scores (0.5 - 1.0)           │
-│ - Rough class: person / vehicle types    │
-└───────────┬───────────────────────────────┘
-            │
-    ┌───────┴────────┐
-    │                │
-┌───▼───────────┐  ┌▼──────────────┐
-│ PERSON        │  │ VEHICLE       │
-│ Detections    │  │ Detections    │
-└───┬───────────┘  └┬──────────────┘
-    │              │
-    │         ┌────┴──────────────────────┐
-    │         │                           │
-    │    ┌────▼──────────┐      ┌─────────▼──────┐
-    │    │Bicycle CNN    │      │Vehicle Type    │
-    │    │Classifier     │      │CNN Classifier  │
-    │    │               │      │(FHWA 13 cls)   │
-    │    └────┬──────────┘      └────┬──────────┘
-    │         │ Yes (Bicycle)        │
-    │    ┌────▼──────────┐      ┌────▼──────────┐
-    │    │Bicycle        │      │FHWA Class     │
-    │    │Record         │      │Result (1-13)  │
-    │    └───────────────┘      └────┬──────────┘
-    │                                │
-    │         ┌──────────────────────┤
-    │         │                      │
-    │    ┌────▼────────────┐    ┌────▼───────────┐
-    │    │Map to TRL/ORN11 │    │Create Vehicle  │
-    │    │(ORN11 classes)  │    │Detection Record│
-    │    │                 │    │(FHWA+TRL)      │
-    │    └────┬────────────┘    └────┬───────────┘
-    │         │                      │
-    │         └──────────┬───────────┘
-    │                    │
-    │                    ▼
-    │          ┌────────────────┐
-    │          │Vehicle Result  │
-    │          └────────────────┘
+Extract Dimensions:
+- Length (L) = bbox height (travel direction)
+- Width (W) = bbox width (perpendicular)
+    ↓
+    ├─ If L < 2.5m → Motorcycle/Scooter/Tuk-tuk
+    │  (Too small for car)
     │
-    └──────────┬──────────────────┐
-               │                  │
-        ┌──────▼──────┐   ┌──────▼────────┐
-        │Pedestrian   │   │Cyclist        │
-        │Classifier   │   │(Processed)    │
-        │(Sub-types)  │   └───────────────┘
-        └──────┬──────┘
-               │
-        ┌──────▼──────────┐
-        │Pedestrian       │
-        │Record           │
-        │(Adult/Child/    │
-        │ Elderly/        │
-        │ Assisted/Group) │
-        └─────────────────┘
-                   
-            ↓ (All Results Combined)
-            
-     ┌──────────────────────────────┐
-     │ Frame-Level Detection Output │
-     │ (Pedestrians + Vehicles)     │
-     │ Both Standards Mapped        │
-     │ (FHWA + TRL/ORN11)           │
-     └──────────────────────────────┘
+    ├─ If L = 2.5-4.0m and W = 1.5-1.8m → Small Car
+    │  (Compact car footprint)
+    │
+    ├─ If L = 4.0-5.0m and W = 1.7-1.9m → Standard Car
+    │  (Regular sedan/hatchback)
+    │
+    ├─ If L = 4.5-6.5m and W = 1.8-2.1m → Large Car / Van
+    │  (SUV, wagon, small van)
+    │
+    ├─ If L = 6.0-8.0m and W = 2.0-2.3m → Light Commercial
+    │  (Small truck, large van)
+    │
+    ├─ If L = 8.0-12.0m and W = 2.3-2.5m → Heavy Vehicle
+    │  (Medium/large truck)
+    │
+    ├─ If L > 12.0m and W = 2.3-2.5m → Articulated Truck
+    │  (HGV with visible trailer section - clear L/W discontinuity)
+    │
+    └─ If area > 20 m² and L = 10-14m → Bus
+       (Large rectangular footprint, distinct from trucks)
 ```
 
 ---
 
-## YOLO-Based Base Detection
+## Category Definitions
 
-### Model Selection & Configuration
+### 8 Practical Vehicle Categories
 
-**Why YOLOv8?**
-- Real-time inference (20-30 FPS on GPU)
-- Pre-trained on COCO (includes pedestrians, vehicles)
-- Excellent mAP for traffic scenarios
-- Small model size (suitable for batch processing)
+| ID | Category | Length Range | Width Range | Footprint | TRL | PCU | Characteristics |
+|----|----|---------|---------|-----------|-----|-----|---|
+| **1** | Motorcycle/Scooter/Cycle | <2.5m | <1.6m | <4 m² | 1 | 0.6 | Small 2-wheeled |
+| **2** | Small Car | 3.5-4.0m | 1.5-1.8m | 5-7 m² | 2 | 0.9 | Compact footprint |
+| **3** | Standard Car | 4.0-5.0m | 1.7-1.9m | 7-9.5 m² | 2 | 1.0 | Regular sedan/hatch |
+| **4** | Large Car/Van | 4.5-6.5m | 1.8-2.1m | 8-14 m² | 3 | 1.3 | SUV/wagon/van mix |
+| **5** | Light Commercial | 6.0-8.0m | 2.0-2.3m | 12-18 m² | 3-4 | 1.6 | Small truck/van |
+| **6** | Heavy Vehicle | 8.0-12.0m | 2.3-2.5m | 18-30 m² | 5 | 2.5 | Large truck |
+| **7** | Articulated Truck | >12.0m | 2.3-2.5m | >30 m² | 5 | 3.2 | HGV with trailer |
+| **8** | Bus | 10-14m | 2.4-2.8m | 24-39 m² | 6 | 2.8 | Tall rectangular |
 
-### Base Detection Classes
+### Pedestrian Category
 
-```python
-YOLO_CLASSES = {
-    0: 'person',        # For pedestrian detection
-    1: 'bicycle',       # For cyclist detection
-    2: 'car',           # Generic vehicle
-    3: 'motorcycle',    # Two-wheeled motor
-    5: 'bus',           # Public transport
-    7: 'truck',         # Commercial vehicle
-    # Others (less relevant to traffic roundabouts)
-}
-```
-
-### Detection Parameters
-
-| Parameter | Value | Rationale |
-|-----------|-------|-----------|
-| **Confidence Threshold** | 0.5 | Balance between recall and precision |
-| **NMS Threshold** | 0.45 | Prevent duplicate detections |
-| **Image Size** | 1024 | Speed/accuracy trade-off for UAV |
-| **Batch Size** | 8 | GPU memory optimization |
-| **Device** | GPU (CUDA) | Real-time processing required |
-| **Inference Mode** | FP32 | Precision for edge cases |
-
-### Detection Output
-
-```python
-class YOLODetection:
-    """Raw YOLO detection output per frame"""
-    
-    bbox: tuple              # (x1, y1, x2, y2) in pixels
-    confidence: float        # 0.0 - 1.0
-    class_id: int           # YOLO class index (0-80)
-    class_name: str         # YOLO class name
-    area_pixels: int        # Width × Height
-    center: tuple           # (cx, cy)
-    
-    # Computed properties
-    width_pixels: int
-    height_pixels: int
-    aspect_ratio: float     # width / height
-```
-
-### GPU Memory Requirements
-
-| Operation | Memory |
-|-----------|--------|
-| Model load | 800 MB |
-| Batch inference (8 frames) | 2 GB |
-| NMS post-processing | 200 MB |
-| **Total** | ~3 GB |
+| Category | Detection | TRL | PCU | Characteristics |
+|----------|-----------|-----|-----|---|
+| **Pedestrian** | YOLO person detection | - | 0.10 | Walking/standing, bipedal motion |
+| **Pedestrians (Group)** | 2+ close persons | - | 0.15 per person | Moving together |
 
 ---
 
-## Vehicle Classification Pipeline
+## Detection Implementation
 
-### Stage 1: Bicycle Detection (Binary Classifier)
-
-**Purpose**: Separate bicycles from motorcycles/scooters (often confused)
+### Step 1: Calibration (Pixel → Meters)
 
 ```python
-class BicycleDetector:
+class CalibrationManager:
     """
-    Specialized binary classifier to detect bicycles
-    Reasons for separate detection:
-    - Bicycles often misclassified as motorcycles/scooters
-    - Different tracking and flow analysis
-    - Essential for TRL/ORN11 "Cycle" (Class 7) category
-    - Critical for roundabout safety (cyclist protection)
+    Calibrate pixel-to-meter conversion using standard road markings
     """
     
-    def __init__(self):
-        self.model = load_pretrained_bicycle_classifier()
-        self.confidence_threshold = 0.75
-    
-    def is_bicycle(self, frame, bbox, yolo_class) -> bool:
+    @staticmethod
+    def calibrate_from_lane_markings(
+        frame,
+        known_lane_width_m: float = 3.5
+    ) -> float:
         """
-        Returns True if detection is bicycle
-        Features used:
-        - Shape (thin profile, visible frame geometry)
-        - Motion (pedal rotation patterns)
-        - Texture (spoke patterns, tire treads)
-        """
-        
-        roi = extract_roi(frame, bbox)
-        
-        # Feature extraction
-        features = {
-            'shape_features': self.extract_shape_features(roi),
-            'texture_features': self.extract_texture_features(roi),
-            'edge_features': self.extract_edge_features(roi),
-            'size_ratios': self.compute_size_ratios(roi),
-        }
-        
-        # Classification
-        confidence = self.model.predict(features)
-        
-        # Decision logic
-        if confidence > self.confidence_threshold:
-            return True
-        
-        # Heuristic: YOLO says "bicycle" + features support it
-        if yolo_class == 'bicycle' and confidence > 0.5:
-            return True
-        
-        return False
-    
-    def extract_shape_features(self, roi) -> ndarray:
-        """
-        Extract shape features from ROI
-        - Frame lines (vertical/diagonal)
-        - Wheel roundness
-        - Handlebars
+        Use standard road lane marking to calibrate
+        - Standard lane = 3.5m width
+        - Measure pixels across lane marking
+        - Calculate ratio
         """
         pass
     
-    def extract_texture_features(self, roi) -> ndarray:
+    @staticmethod
+    def calibrate_from_road_width(
+        frame,
+        roundabout_radius_m: float
+    ) -> float:
         """
-        Extract texture patterns
-        - Spoke patterns
-        - Seat texture
-        - Tire treads
+        Use known roundabout radius to calibrate
+        - Measure roundabout diameter in pixels
+        - Calculate ratio
+        """
+        pass
+    
+    @staticmethod
+    def validate_calibration(
+        ratio: float,
+        frame,
+        known_features: dict
+    ) -> bool:
+        """
+        Validate calibration by checking against multiple known features
         """
         pass
 ```
 
-### Stage 2: Vehicle Type Classification (FHWA 13 Classes)
-
-**Purpose**: Classify vehicles into FHWA 13-class system (most detailed technical)
+### Step 2: Dimension Extraction
 
 ```python
-class FHWAVehicleClassifier:
+class DimensionExtractor:
     """
-    CNN-based classifier for FHWA 13-class system
-    Outputs: FHWA class (1-13) which maps to TRL/ORN11
-    
-    Classes:
-    1: Motorcycles
-    2: Passenger Cars
-    3: Other 2-Axle 4-Tire Vehicles (vans, pickups)
-    4: Buses
-    5-7: Various truck configurations
-    8-13: Trailer configurations
+    Extract length and width from bounding box
+    Using calibrated pixel-to-meter ratio
     """
     
-    FHWA_CLASSES = {
-        1: 'Motorcycles',
-        2: 'Passenger Cars',
-        3: 'Other 2-Axle 4-Tire Vehicles',
-        4: 'Buses',
-        5: '2-Axle 6-Tire Single-Unit Trucks',
-        6: '3-Axle Single-Unit Trucks',
-        7: '4+ Axle Single-Unit Trucks',
-        8: '4-5 Axle Single-Trailer Trucks',
-        9: '5-Axle Single-Trailer Trucks',
-        10: '6+ Axle Single-Trailer Trucks',
-        11: '5- Axle Multi-Trailer Trucks',
-        12: '6-Axle Multi-Trailer Trucks',
-        13: '7+ Axle Multi-Trailer Trucks',
-    }
-    
-    def __init__(self):
-        self.model = load_pretrained_fhwa_classifier()
-        self.confidence_threshold = 0.6
-    
-    def classify(self, frame, bbox) -> dict:
+    def __init__(self, pixel_to_meter_ratio: float):
         """
-        Classify vehicle into FHWA class
+        ratio: meters per pixel
+        Example: if 100 pixels = 3.5m (lane width), ratio = 0.035
+        """
+        self.ratio = pixel_to_meter_ratio
+    
+    def extract_dimensions(self, bbox: tuple) -> dict:
+        """
+        Extract from bounding box: (x1, y1, x2, y2)
+        
+        Assumption: Vehicle aligned with direction of travel
+        (reasonable for traffic on roundabout)
         """
         
-        roi = extract_roi(frame, bbox)
+        x1, y1, x2, y2 = bbox
         
-        # Feature extraction (multi-modal)
-        features = {
-            'visual_features': self.extract_visual_features(roi),
-            'shape_features': self.extract_shape_features(roi),
-            'axle_indicators': self.detect_axle_count(roi),
-            'tire_indicators': self.detect_tire_count(roi),
-            'size_features': self.extract_size_features(bbox),
-            'length_to_height': self.compute_ratios(bbox),
-        }
+        width_pixels = x2 - x1  # Perpendicular to travel
+        length_pixels = y2 - y1  # Direction of travel (top-down view)
         
-        # Classification with softmax probabilities
-        logits = self.model(features)
-        probabilities = softmax(logits)
+        width_m = width_pixels * self.ratio
+        length_m = length_pixels * self.ratio
         
-        # Get top-3 predictions for uncertainty handling
-        top_indices = argsort(probabilities)[-3:][::-1]
+        area_m2 = width_m * length_m
+        aspect_ratio = length_m / width_m if width_m > 0 else 1.0
         
         return {
-            'fhwa_class': top_indices[0],
-            'fhwa_name': self.FHWA_CLASSES[top_indices[0]],
-            'confidence': probabilities[top_indices[0]],
-            'alternatives': [
-                {
-                    'class': idx,
-                    'name': self.FHWA_CLASSES[idx],
-                    'probability': probabilities[idx]
-                }
-                for idx in top_indices[1:]
-            ]
+            'length_m': length_m,
+            'width_m': width_m,
+            'area_m2': area_m2,
+            'aspect_ratio': aspect_ratio,
+            'length_pixels': length_pixels,
+            'width_pixels': width_pixels,
         }
-    
-    def detect_axle_count(self, roi) -> int:
-        """
-        Estimate axle count from visual indicators:
-        - Wheel spacing patterns
-        - Suspension gap signatures
-        - Trailer connection points
-        """
-        # CNN-based axle detection
-        pass
-    
-    def detect_tire_count(self, roi) -> int:
-        """
-        Count visible/estimated tires
-        Critical for distinguishing:
-        - Class 2 (4 tires) vs Class 3 (4 tires, but van)
-        - Class 5 (6 tires dual rear) vs others
-        """
-        pass
 ```
 
-### Stage 3: Standard Mapping (FHWA → TRL/ORN11)
+### Step 3: Classification by Dimensions
 
 ```python
-class ClassificationMapper:
+class DimensionClassifier:
     """
-    Map FHWA (detailed technical) to TRL/ORN11 (practical)
-    Also assigns PCU values for flow analysis
+    Classify vehicles based ONLY on length and width
     """
     
-    # FHWA → TRL/ORN11 Class Mapping
-    FHWA_TO_TRL = {
-        1: 1,   # Motorcycle → TRL Motorcycle
-        2: 2,   # Passenger Car → TRL Passenger Car
-        3: 3,   # Other 2-Axle 4-Tire → TRL LGV
-        4: 6,   # Bus → TRL Bus
-        5: 3,   # 2-Axle 6-Tire Truck → TRL LGV/MGV
-        6: 4,   # 3-Axle Single-Unit → TRL MGV
-        7: 5,   # 4+ Axle Single-Unit → TRL HGV
-        8: 5,   # 4-5 Axle Single-Trailer → TRL HGV
-        9: 5,   # 5-Axle Single-Trailer → TRL HGV
-        10: 5,  # 6+ Axle Single-Trailer → TRL HGV
-        11: 5,  # Multi-Trailer → TRL HGV
-        12: 5,  # 6-Axle Multi-Trailer → TRL HGV
-        13: 5,  # 7+ Axle Multi-Trailer → TRL HGV
+    # Decision boundaries (meters)
+    THRESHOLDS = {
+        'motorcycle_max_length': 2.5,
+        'motorcycle_max_width': 1.6,
+        
+        'small_car_max_length': 4.0,
+        'small_car_max_width': 1.8,
+        
+        'standard_car_max_length': 5.0,
+        'standard_car_max_width': 1.9,
+        
+        'large_car_max_length': 6.5,
+        'large_car_max_width': 2.1,
+        
+        'light_comm_max_length': 8.0,
+        'light_comm_max_width': 2.3,
+        
+        'heavy_max_length': 12.0,
+        'heavy_max_width': 2.5,
+        
+        'articulated_min_length': 12.0,
+        'bus_min_area': 20.0,  # m²
+        'bus_typical_width': 2.5,
     }
     
-    # Passenger Car Units (PCU) for flow analysis
-    FHWA_TO_PCU = {
-        1: 0.6,     # Motorcycle - nimble
-        2: 1.0,     # Car - reference
-        3: 1.2,     # Van/Pickup
-        4: 2.8,     # Bus - high capacity
-        5: 1.5,     # Dual-tire truck
-        6: 2.0,     # 3-axle truck
-        7: 2.5,     # Large single-unit
-        8: 3.0,     # 4-5 axle combo
-        9: 3.0,     # 5-axle (18-wheeler)
-        10: 3.5,    # 6+ axle
-        11: 3.0,    # Multi-trailer
-        12: 3.2,    # 6-axle multi
-        13: 3.5,    # 7+ axle multi
-    }
-    
-    @staticmethod
-    def map_to_trl(fhwa_class: int) -> int:
-        """Map FHWA class to TRL/ORN11 class"""
-        return ClassificationMapper.FHWA_TO_TRL.get(fhwa_class, 5)
-    
-    @staticmethod
-    def get_pcu(fhwa_class: int) -> float:
-        """Get Passenger Car Unit value"""
-        return ClassificationMapper.FHWA_TO_PCU.get(fhwa_class, 1.5)
-```
-
----
-
-## Pedestrian & Cyclist Detection
-
-### Pedestrian Sub-Classification
-
-```python
-class PedestrianClassifier:
-    """
-    Classify pedestrians into sub-categories critical for roundabout safety
-    """
-    
-    PEDESTRIAN_TYPES = {
-        'adult': 'Adult Pedestrian (15-65 years)',
-        'child': 'Child Pedestrian (<15 years)',
-        'elderly': 'Elderly Pedestrian (65+ years)',
-        'assisted': 'Assisted Pedestrian (crutches, walker, wheelchair)',
-        'group': 'Pedestrian Group (2+ persons)',
-    }
-    
-    def __init__(self):
-        self.age_classifier = load_age_classifier()
-        self.mobility_aid_detector = load_aid_detector()
-        self.confidence_threshold = 0.65
-    
-    def classify(self, frame, bbox, track_history=None) -> dict:
+    def classify(self, dimensions: dict) -> dict:
         """
-        Classify pedestrian with temporal consistency
+        Classify vehicle based on L and W only
         """
         
-        roi = extract_roi(frame, bbox)
+        length = dimensions['length_m']
+        width = dimensions['width_m']
+        area = dimensions['area_m2']
         
-        # Extract ROI properties
-        height_pixels = bbox[3] - bbox[1]
-        width_pixels = bbox[2] - bbox[0]
+        # Decision logic (order matters - most specific first)
         
-        # Check 1: Is this a group?
-        if track_history and len(track_history) > 1:
-            is_group = self.detect_pedestrian_group(track_history)
-            if is_group:
-                return {
-                    'pedestrian_type': 'group',
-                    'description': self.PEDESTRIAN_TYPES['group'],
-                    'confidence': 0.95,
-                    'group_size': len(track_history)
-                }
-        
-        # Check 2: Does pedestrian have mobility aid?
-        has_mobility_aid, aid_type = self.detect_mobility_aid(roi)
-        
-        if has_mobility_aid:
+        # Check 1: Motorcycle/Scooter/Cycle (too small)
+        if (length < self.THRESHOLDS['motorcycle_max_length'] and
+            width < self.THRESHOLDS['motorcycle_max_width']):
             return {
-                'pedestrian_type': 'assisted',
-                'description': self.PEDESTRIAN_TYPES['assisted'],
-                'mobility_aid': aid_type,
+                'category': 'Motorcycle/Cycle',
+                'category_code': 1,
+                'trl_class': 1,
+                'pcu': 0.60,
+                'length_m': length,
+                'width_m': width,
                 'confidence': 0.85
             }
         
-        # Check 3: Estimate age from appearance
-        age_predictions = self.age_classifier(roi)
+        # Check 2: Articulated Truck (very long)
+        if length > self.THRESHOLDS['articulated_min_length']:
+            return {
+                'category': 'Articulated Truck',
+                'category_code': 7,
+                'trl_class': 5,
+                'pcu': 3.2,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.80
+            }
         
-        # Decision logic
-        child_prob = age_predictions.get('child_prob', 0.0)
-        elderly_prob = age_predictions.get('elderly_prob', 0.0)
+        # Check 3: Bus (large area, typical width)
+        if (area > self.THRESHOLDS['bus_min_area'] and
+            length >= 10.0 and length <= 14.0):
+            return {
+                'category': 'Bus',
+                'category_code': 8,
+                'trl_class': 6,
+                'pcu': 2.8,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.82
+            }
         
-        if child_prob > 0.6:
-            ped_type = 'child'
-        elif elderly_prob > 0.6:
-            ped_type = 'elderly'
-        else:
-            ped_type = 'adult'
+        # Check 4: Heavy Vehicle (8-12m long)
+        if (length >= 8.0 and 
+            length < self.THRESHOLDS['heavy_max_length']):
+            return {
+                'category': 'Heavy Vehicle/Truck',
+                'category_code': 6,
+                'trl_class': 5,
+                'pcu': 2.5,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.78
+            }
         
+        # Check 5: Light Commercial (6-8m)
+        if (length >= 6.0 and
+            length < self.THRESHOLDS['light_comm_max_length']):
+            return {
+                'category': 'Light Commercial',
+                'category_code': 5,
+                'trl_class': 3,
+                'pcu': 1.6,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.80
+            }
+        
+        # Check 6: Large Car/Van (4.5-6.5m)
+        if (length >= 4.5 and
+            length <= self.THRESHOLDS['large_car_max_length']):
+            return {
+                'category': 'Large Car/Van',
+                'category_code': 4,
+                'trl_class': 3,
+                'pcu': 1.3,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.82
+            }
+        
+        # Check 7: Standard Car (4.0-5.0m)
+        if (length >= 4.0 and
+            length < self.THRESHOLDS['standard_car_max_length']):
+            return {
+                'category': 'Standard Car',
+                'category_code': 3,
+                'trl_class': 2,
+                'pcu': 1.0,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.85
+            }
+        
+        # Check 8: Small Car (3.5-4.0m) - default for car-sized
+        if length >= 3.5:
+            return {
+                'category': 'Small Car',
+                'category_code': 2,
+                'trl_class': 2,
+                'pcu': 0.9,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.85
+            }
+        
+        # Fallback: Unknown/ambiguous
         return {
-            'pedestrian_type': ped_type,
-            'description': self.PEDESTRIAN_TYPES[ped_type],
-            'confidence': age_predictions[f'{ped_type}_prob'],
-            'age_distribution': age_predictions
+            'category': 'Unknown',
+            'category_code': 0,
+            'trl_class': 2,
+            'pcu': 1.0,
+            'length_m': length,
+            'width_m': width,
+            'confidence': 0.50,
+            'flagged': True,
+            'reason': 'Dimensions do not match any category'
         }
-    
-    def detect_mobility_aid(self, roi) -> tuple:
-        """
-        Detect crutches, walkers, wheelchairs, canes
-        Returns: (has_aid: bool, aid_type: str)
-        """
-        pass
-    
-    def detect_pedestrian_group(self, track_history) -> bool:
-        """
-        Detect if pedestrians are moving as a coordinated group
-        Uses: spatial proximity + correlated velocity
-        """
-        pass
-```
-
-### Pedestrian Speed Validation
-
-```python
-class PedestrianSpeedValidator:
-    """
-    Validate pedestrian/cyclist speeds for QA
-    Flags anomalies for manual review
-    """
-    
-    SPEED_RANGES_MS = {
-        'adult': (0.9, 2.0),           # m/s
-        'child': (0.8, 1.8),
-        'elderly': (0.5, 1.2),
-        'assisted': (0.3, 1.0),
-        'cyclist': (4.0, 6.0),
-    }
-    
-    @staticmethod
-    def validate_speed(pedestrian_type: str, speed_ms: float) -> tuple:
-        """
-        Check if speed is within expected range
-        Returns: (is_valid: bool, deviation: float)
-        """
-        if pedestrian_type not in PedestrianSpeedValidator.SPEED_RANGES_MS:
-            return True, 0.0
-        
-        min_speed, max_speed = PedestrianSpeedValidator.SPEED_RANGES_MS[
-            pedestrian_type
-        ]
-        
-        is_valid = min_speed <= speed_ms <= max_speed
-        
-        # Calculate how far outside range
-        if not is_valid:
-            if speed_ms < min_speed:
-                deviation = min_speed - speed_ms
-            else:
-                deviation = speed_ms - max_speed
-        else:
-            deviation = 0.0
-        
-        return is_valid, deviation
 ```
 
 ---
 
-## Multi-Standard Output
+## Pedestrian & Cycle Detection
 
-### Detection Record Structure
+### Pedestrian Detection (Simple)
+
+```python
+class PedestrianDetector:
+    """
+    Pedestrians detected from YOLO person detection
+    No sub-categorization (cannot distinguish from above)
+    """
+    
+    def classify_pedestrian(self, bbox: tuple) -> dict:
+        """
+        Simple pedestrian detection
+        """
+        return {
+            'category': 'Pedestrian',
+            'category_code': None,
+            'trl_class': None,
+            'pcu': 0.10,
+            'confidence': 0.85
+        }
+    
+    def detect_pedestrian_group(self, nearby_pedestrians: list) -> dict:
+        """
+        Group of pedestrians crossing together
+        """
+        group_size = len(nearby_pedestrians)
+        
+        return {
+            'category': 'Pedestrian Group',
+            'category_code': None,
+            'group_size': group_size,
+            'trl_class': None,
+            'pcu': 0.10 * group_size,
+            'confidence': 0.80
+        }
+```
+
+### Cycle Detection (Unified)
+
+```python
+class CycleDetector:
+    """
+    Motorcycles, scooters, bicycles, mopeds all classified as 'Cycle'
+    Cannot distinguish at UAV altitude + same traffic impact in roundabout
+    """
+    
+    def classify_cycle(self, dimensions: dict) -> dict:
+        """
+        Small 2-wheeled vehicle (bicycle or motorcycle)
+        """
+        
+        length = dimensions['length_m']
+        width = dimensions['width_m']
+        
+        if (length < 2.5 and width < 1.6):
+            return {
+                'category': 'Cycle',
+                'subcategory': None,  # No distinction
+                'category_code': 1,
+                'trl_class': 1,
+                'pcu': 0.60,
+                'length_m': length,
+                'width_m': width,
+                'confidence': 0.80
+            }
+        
+        return None  # Not a cycle
+```
+
+---
+
+## Implementation Architecture
+
+### Simplified Pipeline
+
+```
+Raw UAV Frame (30-50m altitude, looking down)
+    ↓
+┌─────────────────────────────┐
+│ YOLO Person-Vehicle Det     │
+│ (Basic: person vs vehicle)  │
+└────────────┬────────────────┘
+             │
+    ┌────────┴──────────┐
+    │                   │
+┌───▼──────────┐   ┌────▼────────────────┐
+│ PERSON       │   │ VEHICLE (bounding   │
+│ Detected     │   │ box)                │
+└───┬──────────┘   └────┬────────────────┘
+    │                   │
+    │            ┌──────▼────────────────┐
+    │            │ Extract Dimensions   │
+    │            │ from Bounding Box    │
+    │            │ (L, W using ratio)   │
+    │            └──────┬────────────────┘
+    │                   │
+    │            ┌──────▼────────────────┐
+    │            │ DimensionClassifier  │
+    │            │ Classify by L + W    │
+    │            │ only                 │
+    │            └──────┬────────────────┘
+    │                   │
+    │            ┌──────▼────────────────┐
+    │            │ Classification       │
+    │            │ Result (8 categories)│
+    │            └──────┬────────────────┘
+    │                   │
+    │      ┌────────────┘
+    │      │
+    ├──────┴─────────────────────────┐
+    │                                │
+┌───▼──────────────┐         ┌───────▼──────┐
+│ Pedestrian       │         │ Vehicle      │
+│ Record           │         │ Record       │
+│ (TRL: -)         │         │ (TRL 1-6)    │
+└──────────────────┘         └───────┬──────┘
+                                     │
+                            ┌────────▼─────────┐
+                            │ Final Detection  │
+                            │ Record           │
+                            │ (L, W, Category, │
+                            │  TRL, PCU)       │
+                            └──────────────────┘
+```
+
+---
+
+## Calibration Procedure
+
+### Recommended Calibration Steps
+
+**Step 1: Before flight**
+- Measure actual lane width at roundabout (standard = 3.5m)
+- Mark start and end points clearly
+
+**Step 2: During flight**
+- Capture frame with lane markings clearly visible
+- Measure pixel distance across marked lane
+- Calculate: ratio = 3.5m / measured_pixels
+
+**Example:**
+```
+Lane width = 3.5m (physical)
+Pixels across lane = 100 pixels
+Ratio = 3.5 / 100 = 0.035 m/pixel
+```
+
+**Step 3: Validation**
+- Test on known vehicles parked in view
+- Measure actual vehicle dimensions
+- Compare with extracted dimensions
+- Should be within ±10% error
+
+```python
+# Validation example
+measured_car_length = 4.5  # meters (physical measurement)
+extracted_car_length = 4.4  # meters (from pixels + ratio)
+error_percent = abs(measured_car_length - extracted_car_length) / measured_car_length * 100
+# error_percent = 2.2% ✓ Good
+```
+
+---
+
+## Detection Record Format
+
+### Simplified Output
 
 ```python
 class DetectionRecord:
-    """
-    Complete detection output per frame/object
-    Includes both FHWA and TRL/ORN11 classifications
-    """
-    
-    # Identification
     detection_id: int
     frame_number: int
     timestamp: float
-    roundabout_id: str
     
-    # Bounding box & confidence
-    bbox: tuple                    # (x1, y1, x2, y2)
-    confidence: float              # 0.0-1.0
-    area_pixels: int
-    center: tuple
+    # Bounding box
+    bbox: tuple  # (x1, y1, x2, y2)
+    confidence: float  # 0.0-1.0
     
-    # YOLO base classification
-    yolo_class: str
-    yolo_confidence: float
+    # Classification
+    category: str  # One of 8 categories
+    category_code: int  # 1-8
     
-    # FHWA Classification (detailed technical)
-    fhwa_class: int                # 1-13
-    fhwa_name: str
-    fhwa_confidence: float
-    fhwa_alternatives: list
+    # Dimensions (if vehicle)
+    length_m: Optional[float]
+    width_m: Optional[float]
+    area_m2: Optional[float]
     
-    # TRL/ORN11 Classification (practical)
-    trl_class: int                 # 1-8
-    trl_name: str
+    # Standards
+    trl_class: Optional[int]  # TRL/ORN11 mapping
+    pcu: float  # Passenger Car Unit
     
-    # Pedestrian Data
-    is_pedestrian: bool
-    pedestrian_type: Optional[str]  # adult/child/elderly/assisted/group
-    pedestrian_confidence: float
-    mobility_aid: Optional[str]
-    
-    # Cyclist Data
-    is_cyclist: bool
-    
-    # Physical Attributes (estimated)
-    vehicle_length_m: Optional[float]
-    vehicle_height_m: Optional[float]
-    vehicle_width_m: Optional[float]
-    axle_count_estimate: Optional[int]
-    tire_count_estimate: Optional[int]
-    
-    # Flow Properties
-    pcu_value: float
+    # Speed (from tracking)
     speed_kmh: Optional[float]
-    heading_degrees: Optional[float]
     
-    # Quality Indicators
-    flagged_for_review: bool
-    review_reason: Optional[str]
-    quality_score: float  # 0.0-1.0
+    # Quality
+    flagged: bool
+    reason: Optional[str]
 ```
 
-### JSON Export Format
+### JSON Export Example
 
 ```json
 {
   "detection_id": 1042,
   "frame_number": 1250,
   "timestamp": 125.5,
-  "roundabout_id": "Roundabout_1",
   "bbox": [640, 360, 720, 420],
-  "confidence": 0.96,
-  "yolo_class": "car",
-  "yolo_confidence": 0.92,
-  "classification": {
-    "fhwa": {
-      "class": 2,
-      "name": "Passenger Cars",
-      "confidence": 0.96,
-      "alternatives": [
-        {
-          "class": 3,
-          "name": "Other 2-Axle 4-Tire Vehicles",
-          "probability": 0.03
-        }
-      ]
-    },
-    "trl_orn11": {
-      "class": 2,
-      "name": "Passenger Car",
-      "pcu": 1.0
-    }
-  },
-  "pedestrian": null,
-  "cyclist": null,
-  "physical_attributes": {
+  "confidence": 0.88,
+  "category": "Standard Car",
+  "category_code": 3,
+  "dimensions": {
     "length_m": 4.5,
-    "height_m": 1.6,
     "width_m": 1.8,
-    "axle_count": 2,
-    "tire_count": 4
+    "area_m2": 8.1
   },
+  "classification": {
+    "trl_class": 2,
+    "pcu": 1.0
+  },
+  "speed_kmh": 35.2,
   "quality": {
     "flagged": false,
-    "reason": null,
-    "score": 0.96
+    "reason": null
   }
 }
 ```
 
----
-
-## Confidence & Quality Management
-
-### Multi-Level Confidence Scoring
-
-```python
-class ConfidenceManager:
-    """
-    Manage confidence scores across detection pipeline
-    Identify low-confidence detections for manual review
-    """
-    
-    def compute_overall_confidence(
-        self,
-        yolo_confidence: float,
-        classification_confidence: float,
-        feature_consistency: float,
-        temporal_consistency: float = 1.0
-    ) -> float:
-        """
-        Weighted combination of confidence sources
-        """
-        
-        weights = {
-            'yolo': 0.30,            # Base detection
-            'classification': 0.50,  # Vehicle/pedestrian type
-            'features': 0.15,        # Feature matching
-            'temporal': 0.05,        # Tracking consistency
-        }
-        
-        overall = (
-            weights['yolo'] * yolo_confidence +
-            weights['classification'] * classification_confidence +
-            weights['features'] * feature_consistency +
-            weights['temporal'] * temporal_consistency
-        )
-        
-        return overall
-    
-    def flag_for_manual_review(
-        self,
-        detection: DetectionRecord
-    ) -> None:
-        """
-        Flag detections requiring human verification
-        """
-        
-        reasons = []
-        
-        if detection.confidence < 0.55:
-            reasons.append("Low overall confidence")
-        
-        if detection.fhwa_confidence < 0.60:
-            reasons.append("Low classification confidence")
-        
-        # Check if top 2 FHWA alternatives too close
-        if len(detection.fhwa_alternatives) > 0:
-            gap = (detection.fhwa_confidence - 
-                   detection.fhwa_alternatives[0]['probability'])
-            if gap < 0.05:
-                reasons.append("Ambiguous FHWA classification")
-        
-        if reasons:
-            detection.flagged_for_review = True
-            detection.review_reason = "; ".join(reasons)
-```
-
----
-
-## Data Export Format
-
-### CSV Output
+### CSV Format
 
 ```csv
-frame_num, timestamp, bbox_x1, bbox_y1, bbox_x2, bbox_y2, 
-fhwa_class, fhwa_name, trl_class, trl_name,
-is_pedestrian, pedestrian_type, is_cyclist, 
-confidence, pcu_value, speed_kmh, flagged, review_reason
+frame, timestamp, category, length_m, width_m, trl_class, pcu, speed_kmh, confidence, flagged
 
-1250, 125.5, 640, 360, 720, 420, 2, "Passenger Cars", 
-2, "Passenger Car", false, null, false, 
-0.96, 1.0, 35.2, false, null
-```
-
-### Database Schema
-
-```sql
-CREATE TABLE detections (
-    detection_id INTEGER PRIMARY KEY,
-    frame_number INTEGER,
-    timestamp REAL,
-    roundabout_id TEXT,
-    
-    bbox_x1 INTEGER,
-    bbox_y1 INTEGER,
-    bbox_x2 INTEGER,
-    bbox_y2 INTEGER,
-    
-    -- FHWA Classification (detailed technical)
-    fhwa_class INTEGER,
-    fhwa_name TEXT,
-    fhwa_confidence REAL,
-    
-    -- TRL/ORN11 Classification (practical)
-    trl_class INTEGER,
-    trl_name TEXT,
-    
-    -- Pedestrian/Cyclist
-    is_pedestrian BOOLEAN,
-    pedestrian_type TEXT,  -- adult, child, elderly, assisted, group
-    pedestrian_confidence REAL,
-    is_cyclist BOOLEAN,
-    
-    -- Quality
-    confidence REAL,
-    pcu_value REAL,
-    flagged_for_review BOOLEAN,
-    review_reason TEXT,
-    
-    FOREIGN KEY (frame_number) REFERENCES frames(frame_number),
-    FOREIGN KEY (roundabout_id) REFERENCES roundabouts(roundabout_id)
-);
+1250, 125.5, "Standard Car", 4.5, 1.8, 2, 1.0, 35.2, 0.88, false
+1251, 125.6, "Pedestrian", null, null, null, 0.10, 1.2, 0.92, false
+1252, 125.7, "Cycle", 2.2, 0.8, 1, 0.60, 8.5, 0.75, false
+1253, 125.8, "Bus", 12.0, 2.6, 6, 2.8, 25.0, 0.85, false
+1254, 125.9, "Heavy Vehicle", 10.0, 2.4, 5, 2.5, 30.0, 0.80, false
 ```
 
 ---
 
-## Implementation Roadmap
+## Quality Assurance
 
-### Phase 1: Base Detection Infrastructure (Week 1)
-- [ ] Set up YOLOv8 model loading and inference
-- [ ] Implement GPU batch processing
-- [ ] Create NMS and confidence filtering
-- [ ] Test on sample roundabout video (first 5 min)
-- **Deliverable**: Raw detections CSV
+### Validation Rules
 
-### Phase 2: Bicycle Classification (Week 2)
-- [ ] Source/train bicycle binary classifier
-- [ ] Implement bicycle detection logic
-- [ ] Integrate into detection pipeline
-- [ ] Test on mixed traffic scenarios
-- **Deliverable**: Bicycle/motorcycle distinction validated
+| Check | Rule | Action if Violated |
+|-------|------|-------------------|
+| **Dimension Plausibility** | 2.0m ≤ L ≤ 20m, 1.4m ≤ W ≤ 2.8m | Flag for review |
+| **Aspect Ratio** | L:W between 1.3 and 8.0 | Flag anomaly |
+| **Category Consistency** | Vehicle stays in category ±1 frame | Log switches |
+| **Speed Sanity** | L < 3m: speed <15 m/s; L > 8m: speed <12 m/s | Flag violators |
+| **Calibration Check** | Known features match ±10% | Re-calibrate if worse |
 
-### Phase 3: FHWA Vehicle Classification (Week 3)
-- [ ] Train/fine-tune CNN on FHWA 13 classes
-- [ ] Implement axle/tire detection features
-- [ ] Add alternative prediction ranking
-- [ ] Validate on diverse truck types
-- **Deliverable**: FHWA classification working
-
-### Phase 4: TRL/ORN11 Mapping (Week 4)
-- [ ] Implement FHWA → TRL mapping
-- [ ] Add PCU value assignment
-- [ ] Create dual-standard output
-- [ ] Validate mapping consistency
-- **Deliverable**: Dual standard output (FHWA + TRL)
-
-### Phase 5: Pedestrian Classification (Week 5)
-- [ ] Train age classifier (adult/child/elderly)
-- [ ] Implement mobility aid detection
-- [ ] Add group detection logic
-- [ ] Test on crowded scenarios
-- **Deliverable**: Pedestrian sub-classification working
-
-### Phase 6: Quality & Integration (Week 6)
-- [ ] Implement confidence scoring system
-- [ ] Add manual review flagging
-- [ ] Create CSV/JSON export
-- [ ] Integrate with tracking module
-- [ ] End-to-end testing
-- **Deliverable**: Complete detection module ready
-
----
-
-## Testing Strategy
-
-### Unit Tests
+### Flagging for Manual Review
 
 ```python
-def test_bicycle_detection():
-    """Verify bicycle classification accuracy >= 95%"""
-    pass
-
-def test_fhwa_classification():
-    """Test FHWA 13-class classification on diverse vehicles"""
-    pass
-
-def test_fhwa_to_trl_mapping():
-    """Verify correct mapping FHWA → TRL/ORN11"""
-    pass
-
-def test_pedestrian_subtype():
-    """Test pedestrian sub-classification (adult/child/elderly)"""
-    pass
-
-def test_confidence_scoring():
-    """Validate confidence score calculation logic"""
-    pass
-
-def test_speed_validation():
-    """Test pedestrian speed validation ranges"""
-    pass
-```
-
-### Integration Tests
-
-```python
-def test_end_to_end_detection():
-    """Full pipeline: frame → FHWA + TRL + Pedestrian"""
-    pass
-
-def test_tracking_consistency():
-    """Verify classification consistency across frames"""
-    pass
-
-def test_all_standards_export():
-    """Test CSV/JSON export with both standards"""
-    pass
+def should_flag_for_review(detection: DetectionRecord) -> bool:
+    """Flag detections needing manual verification"""
+    
+    reasons = []
+    
+    # Low confidence
+    if detection.confidence < 0.70:
+        reasons.append("Low confidence (<0.70)")
+    
+    # Dimension anomalies
+    if detection.length_m:
+        if detection.length_m < 2.0 or detection.length_m > 20.0:
+            reasons.append(f"Anomalous length: {detection.length_m:.1f}m")
+    
+    if detection.width_m:
+        if detection.width_m < 1.4 or detection.width_m > 2.8:
+            reasons.append(f"Anomalous width: {detection.width_m:.1f}m")
+    
+    # Weird aspect ratios
+    if (detection.length_m and detection.width_m and 
+        detection.length_m / detection.width_m > 8.0):
+        reasons.append("Extreme aspect ratio (possibly FP)")
+    
+    if reasons:
+        detection.flagged = True
+        detection.reason = "; ".join(reasons)
+        return True
+    
+    return False
 ```
 
 ---
 
-## Performance Benchmarks (Target)
+## Implementation Checklist
 
-| Metric | Target | Current |
-|--------|--------|---------|
-| YOLO Detection | 20-30 FPS | - |
-| FHWA Classification | 10-20 FPS | - |
-| Pedestrian Classification | 15-25 FPS | - |
-| Overall Frame Rate | 15 FPS | - |
-| Detection Precision | >95% | - |
-| Pedestrian Detection | >90% | - |
-| Bicycle Accuracy | >95% | - |
+### Phase 1: Setup & Calibration (Week 1)
+- [ ] Set up YOLO person-vehicle detector
+- [ ] Implement dimension extraction from bounding box
+- [ ] Develop calibration procedure (lane markings)
+- [ ] Test on sample video
+- [ ] **Deliverable**: Calibrated pixel-to-meter ratio
+
+### Phase 2: Classification (Week 2)
+- [ ] Implement DimensionClassifier (8 categories)
+- [ ] Implement decision tree logic
+- [ ] Test on diverse vehicles
+- [ ] Create validation dataset
+- [ ] **Deliverable**: Classification working on test data
+
+### Phase 3: Integration (Week 3)
+- [ ] Integrate with pedestrian detection
+- [ ] Add cycle detection
+- [ ] Create detection records
+- [ ] Implement QA flagging
+- [ ] **Deliverable**: Complete pipeline end-to-end
+
+### Phase 4: Testing & Refinement (Week 4)
+- [ ] Test on all 7 roundabout sample videos
+- [ ] Validate dimensions against ground truth
+- [ ] Refine thresholds if needed
+- [ ] Create test dataset
+- [ ] **Deliverable**: Production-ready detector
+
+---
+
+## Key Advantages of This Approach
+
+✅ **Simple**: Only uses L × W (two numbers)  
+✅ **Reliable**: Dimensions always visible from above  
+✅ **Fast**: No complex feature extraction  
+✅ **Maintainable**: Clear decision logic  
+✅ **Calibratable**: Single one-time calibration  
+✅ **Practical**: Works with UAV altitude constraints  
+✅ **Relevant**: Categories match roundabout traffic patterns  
+✅ **Traceable**: Easy to validate and explain results  
 
