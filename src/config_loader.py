@@ -92,6 +92,8 @@ class ParameterExtractionConfig:
     speed_unit: str = "kmh"
     speed_filter_window: int = 5
     speed_outlier_threshold: float = 2.0
+    # Upper bound for speed clipping — values above this are treated as noise
+    max_speed_kmh: float = 200.0
     vehicle_classes: List[str] = field(
         default_factory=lambda: ["pedestrian", "car", "bus", "truck", "motorcycle"]
     )
@@ -265,6 +267,7 @@ class ConfigLoader:
                 speed_unit=p.get("speed_unit", "kmh"),
                 speed_filter_window=int(p.get("speed_filter_window", 5)),
                 speed_outlier_threshold=float(p.get("speed_outlier_threshold", 2.0)),
+                max_speed_kmh=float(p.get("max_speed_kmh", 200.0)),
                 vehicle_classes=p.get(
                     "vehicle_classes", ["pedestrian", "car", "bus", "truck", "motorcycle"]
                 ),

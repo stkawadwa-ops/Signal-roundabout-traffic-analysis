@@ -237,21 +237,23 @@ class PipelineOrchestrator:
 
         t_start = time.time()
 
-        # --- database --------------------------------------------------------
+        # --- validate video file BEFORE touching the database ----------------
+        video_path_obj = Path(video_path)
+        if not video_path_obj.exists():
+            raise FileNotFoundError(f"Video file not found: {video_path}")
+        cap_test = cv2.VideoCapture(video_path)
+        if not cap_test.isOpened():
+            cap_test.release()
+            raise FileNotFoundError(f"Cannot open video (unsupported format?): {video_path}")
+        fps = cap_test.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap_test.get(cv2.CAP_PROP_FRAME_COUNT))
+        width = int(cap_test.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap_test.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap_test.release()
+
+        # --- database (opened only after video is confirmed readable) --------
         db = DatabaseManager(db_path, auto_init=True)
         facility_row_id = self._get_or_create_facility(db, facility_name)
-
-        # --- video metadata --------------------------------------------------
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            db.close()
-            raise FileNotFoundError(f"Cannot open video: {video_path}")
-
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
 
         video_id = db.insert_video(
             facility_id=facility_row_id,
@@ -666,8 +668,9 @@ class PipelineOrchestrator:
             kernel = np.ones(w) / w
             speeds_kmh = np.convolve(speeds_kmh, kernel, mode="valid")
 
-        # Clip unrealistically high values (>200 km/h → noise)
-        speeds_kmh = np.clip(speeds_kmh, 0.0, 200.0)
+        # Clip unrealistically high values (noise from rapid bbox jumps)
+        max_speed = self.config.parameter_extraction.max_speed_kmh
+        speeds_kmh = np.clip(speeds_kmh, 0.0, max_speed)
 
         return speeds_kmh
 

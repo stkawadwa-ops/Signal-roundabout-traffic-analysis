@@ -53,6 +53,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Ensure repo root is importable even when run directly
@@ -242,7 +243,7 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _setup_logging(level: str, log_file: Optional[str] = None) -> None:  # type: ignore[name-defined]
+def _setup_logging(level: str, log_file: Optional[str] = None) -> None:
     fmt = "%(asctime)s [%(levelname)s] %(name)s — %(message)s"
     handlers: list = [logging.StreamHandler(sys.stdout)]
     if log_file:
@@ -361,6 +362,4 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901
 
 
 if __name__ == "__main__":
-    # Allow `from typing import Optional` used inside _setup_logging above
-    from typing import Optional  # noqa: F401
     raise SystemExit(main())
