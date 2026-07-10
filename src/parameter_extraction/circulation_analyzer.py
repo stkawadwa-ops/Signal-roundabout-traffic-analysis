@@ -107,15 +107,17 @@ class VehicleJourney:
     entry_time_seconds: float
     entry_speed_kmh: float
     
-    # Circulation phases (list of arcs)
-    circulation_arcs: List[CirculationArc] = field(default_factory=list)
-    
-    # Exit phase
+    # Exit phase (non-default fields must come before default fields)
     exit_point_id: int        # Final exit used
     exit_time_frame: int
     exit_time_seconds: float
     exit_speed_kmh: float
+
+    # Fields with defaults
     total_time_in_roundabout_seconds: float = 0.0
+
+    # Circulation phases (list of arcs)
+    circulation_arcs: List[CirculationArc] = field(default_factory=list)
     
     # Overpass interactions
     overpass_occlusions: List[OverpassOcclusion] = field(default_factory=list)

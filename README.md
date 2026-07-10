@@ -385,7 +385,7 @@ Final Outputs
 ## Getting Started
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.10+
 - CUDA-capable GPU (recommended for real-time processing)
 - 8GB+ RAM
 - 200GB+ storage for raw videos
@@ -404,21 +404,20 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Download pre-trained models
-python scripts/download_models.py
-
-# Run sample test
-pytest tests/unit/test_video_processing.py -v
+# Run the initial trial-readiness check
+python scripts/validate_setup.py --config configs/production.yaml
 ```
 
-### Process Your First Roundabout
+### Initial Trial Workflow
 
 ```bash
-python scripts/process_single_roundabout.py \
-    --facility roundabout_1 \
-    --output-dir ./results \
-    --config configs/roundabout_1.yaml
+python scripts/validate_setup.py --config configs/production.yaml
 ```
+
+This repository currently provides the core detection, tracking, geometry,
+stabilization, and database modules plus a trial-readiness validation script.
+Use the validation script first to confirm dependencies, imports, and database
+schema creation before attempting a full field trial.
 
 ---
 
@@ -483,7 +482,8 @@ database:
 
 ## Project Status
 
-🔄 **In Development** - Active implementation phase
+🧪 **Trial Preparation** - Core modules are implemented and a setup validation
+workflow is available for an initial trial.
 
 ---
 
