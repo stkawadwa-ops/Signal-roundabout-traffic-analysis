@@ -14,9 +14,9 @@ import logging
 from dataclasses import dataclass
 from shapely.geometry import (
     Point, LineString, Polygon, MultiPolygon,
-    box, intersection
+    box,
 )
-from shapely.ops import nearest_points, split
+from shapely.ops import nearest_points, split, unary_union
 import math
 
 logger = logging.getLogger(__name__)

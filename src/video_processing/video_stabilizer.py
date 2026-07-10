@@ -286,14 +286,13 @@ class OpticalFlowAnalyzer:
             prev_frame,
             curr_frame,
             None,
-            pyr_scale=0.5,
-            levels=3,
-            winsize=15,
-            iterations=3,
-            n8=True,
-            poly_n=5,
-            poly_sigma=1.1,
-            flags=0
+            0.5,   # pyr_scale
+            3,     # levels
+            15,    # winsize
+            3,     # iterations
+            5,     # poly_n
+            1.1,   # poly_sigma
+            0,     # flags
         )
         return flow
     
