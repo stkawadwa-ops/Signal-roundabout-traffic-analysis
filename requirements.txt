@@ -1,5 +1,4 @@
 # Core Dependencies
-python==3.10.*
 
 # Computer Vision & Detection (Optimized)
 opencv-python==4.8.1.78
@@ -12,8 +11,9 @@ torchaudio==2.1.0
 # Advanced Tracking & Detection
 # ByteTrack for superior multi-object tracking
 # Installation: pip install git+https://github.com/ifzhang/ByteTrack.git
-# Or use the PyPI package if available
-yolox==0.3.0  # ByteTrack dependency
+# YOLOX/ByteTrack is optional for the initial trial because the tracker
+# falls back to Hungarian matching when ByteTrack is unavailable.
+# yolox==0.3.0
 
 # Geometric Operations (Shapely)
 Shapely==2.0.2
@@ -55,9 +55,6 @@ mypy==1.7.1
 ipython==8.18.1
 jupyter==1.0.0
 nbformat==5.9.2
-
-# Database
-sqlite3-python==1.0.0
 
 # Video Processing Optimization
 av==10.1.0  # PyAV for efficient video codec access
