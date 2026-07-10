@@ -1,0 +1,195 @@
+# Production Configuration for Optimized Pipeline
+# Incorporates: OpenCV, YOLOv8/v10, SAHI, ByteTrack, Shapely, SQLite
+
+video:
+  # Video Stabilization (GoodFeaturesToTrack + Optical Flow)
+  stabilization_method: "optical_flow"
+  max_features: 200                    # Maximum Harris corners to track
+  feature_quality: 0.01                # Quality level for corner detection
+  min_distance: 30.0                   # Minimum distance between features
+  block_size: 3                        # Block size for Harris corner
+  
+  # Optical Flow Parameters (Lukas-Kanade)
+  win_size: [15, 15]                   # Window size for optical flow
+  max_level: 2                         # Pyramid levels
+  
+  # Homography Estimation (RANSAC)
+  ransac_threshold: 5.0                # Inlier threshold (pixels)
+  ransac_method: "RANSAC"              # Robust fitting method
+
+detection:
+  # YOLO Model Selection
+  model_name: "yolov8x"                # Options: yolov8x, yolov10x (faster)
+  confidence_threshold: 0.5            # Detection confidence cutoff
+  nms_threshold: 0.45                  # NMS IoU threshold
+  
+  # SAHI Configuration (Slicing Aided Hyper Inference)
+  use_sahi: true                       # Enable SAHI for small objects
+  slice_height: 512                    # Tile height (pixels)
+  slice_width: 512                     # Tile width (pixels)
+  overlap_height_ratio: 0.1            # 10% vertical overlap
+  overlap_width_ratio: 0.1             # 10% horizontal overlap
+  
+  # Feature Enhancement
+  enable_p2_features: true             # Use high-res P2 feature maps
+  augment: false                       # Test-time augmentation (slower)
+  
+  # Hardware Configuration
+  device: "cuda:0"                     # cuda:0, cuda:1, cpu
+  batch_size: 16                       # Batch size for inference
+
+tracking:
+  # ByteTrack Parameters
+  track_thresh: 0.5                    # Detection confidence for tracking
+  track_buffer: 30                     # Buffer size for lost tracks (frames)
+  match_thresh: 0.8                    # Matching threshold
+  
+  # Track Lifecycle
+  max_age: 120                         # Max frames to keep lost track
+  min_hits: 3                          # Min detections to confirm track
+  
+  # Appearance Features
+  use_appearance: true                 # Deep feature re-identification
+  appearance_threshold: 0.7            # Re-identification similarity threshold
+  
+  # Occlusion Handling (Kalman Filter)
+  occlusion_timeout: 60                # Max frames to predict through occlusion
+  min_track_length: 5                  # Min points for track interpolation
+  
+  # Frame Info
+  frame_rate: 30                       # Video frame rate (fps)
+  img_size: [1920, 1080]               # Image dimensions [width, height]
+
+geometry:
+  # Roundabout Zone Definition (Calibrate per facility!)
+  roundabout_center: [960, 540]        # Center pixel coordinates
+  outer_radius: 200                    # Outer circle radius (pixels)
+  inner_radius: 80                     # Inner circle radius (pixels)
+  
+  # Entry/Exit Zones (Define as polygons per facility)
+  entry_zones: []                      # [[x1,y1], [x2,y2], ...] for each entry
+  exit_zones: []                       # [[x1,y1], [x2,y2], ...] for each exit
+  
+  # Calibration
+  pixel_to_meter_ratio: 0.05           # CRITICAL: Calibrate per roundabout!
+                                       # Measure ground distance, count pixels
+
+parameter_extraction:
+  # Speed Calculation
+  speed_unit: "kmh"                    # km/h or mph
+  speed_filter_window: 5               # Smoothing window (frames)
+  speed_outlier_threshold: 2.0         # Std devs for outlier detection
+  
+  # Classification
+  vehicle_classes:
+    - "pedestrian"
+    - "car"
+    - "bus"
+    - "truck"
+    - "motorcycle"
+  
+  # Turning Radius
+  circle_fit_min_points: 10            # Minimum points for curve fitting
+  curvature_window: 5                  # Local curvature window (frames)
+
+database:
+  # SQLite Configuration
+  type: "sqlite"
+  path: "./data/processed/{facility_id}/database.db"
+  
+  # Performance Tuning
+  pragma_cache_size: 10000             # Cache size (KB) - 10MB
+  pragma_synchronous: "NORMAL"         # Balance safety/speed
+  pragma_journal_mode: "WAL"           # Write-Ahead Logging (concurrent reads)
+  pragma_temp_store: "MEMORY"          # In-memory temporary storage
+  
+  # Batch Operations
+  batch_size: 1000                     # Records per batch insert
+  commit_interval: 10000               # Commit every N records
+
+optimization:
+  # Signal Timing Analysis
+  simulation_samples: 1000             # SUMO simulation iterations
+  cycle_length_min: 60                 # Min cycle length (seconds)
+  cycle_length_max: 120                # Max cycle length (seconds)
+  green_time_min: 10                   # Min green time (seconds)
+  green_time_max: 90                   # Max green time (seconds)
+  
+  # Optimization Parameters
+  confidence_threshold: 0.8            # Recommendation confidence
+  sensitivity_analysis: true           # Analyze parameter sensitivity
+  
+  # Delay Model
+  delay_model: "webster"               # webster, sidra, or custom
+  accepted_delay_threshold: 30.0       # Acceptable avg delay (seconds)
+
+output:
+  # Export Formats
+  export_formats: ["csv", "json", "sqlite"]
+  
+  # Visualization
+  generate_annotated_video: true
+  annotate_detections: true            # Draw bboxes
+  annotate_tracks: true                # Draw track IDs
+  annotate_zones: true                 # Draw entry/circ/exit zones
+  
+  # Reporting
+  generate_report: true                # PDF report
+  report_format: "pdf"
+  include_visualizations: true         # Charts, heatmaps
+  
+  # Output Paths
+  output_dir: "./data/analysis/{facility_id}"
+  tracks_file: "tracks.json"
+  parameters_file: "parameters.csv"
+  report_file: "analysis_report.pdf"
+  video_output: "annotated_output.mp4"
+
+logging:
+  # Logging Configuration
+  level: "INFO"                        # DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  log_file: "./logs/{facility_id}_{timestamp}.log"
+  
+  # Verbosity
+  log_detections: false                # Log every detection (verbose)
+  log_tracks: true                     # Log track lifecycle events
+  log_parameters: false                # Log every parameter (verbose)
+
+# Facility-Specific Overrides
+# Uncomment and modify for specific roundabouts
+# 
+# facilities:
+#   roundabout_1:
+#     geometry:
+#       pixel_to_meter_ratio: 0.048    # Calibrated for this location
+#       roundabout_center: [960, 540]
+#     database:
+#       path: "./data/processed/roundabout_1/database.db"
+#
+#   roundabout_2:
+#     geometry:
+#       pixel_to_meter_ratio: 0.052
+#       roundabout_center: [940, 520]
+#     detection:
+#       confidence_threshold: 0.55     # Adjust if needed
+
+# Performance Tuning Profiles
+# Uncomment one for different use cases
+#
+# profiles:
+#   fast:
+#     use_sahi: false
+#     model_name: "yolov8m"            # Medium instead of Extra Large
+#     batch_size: 32
+#   
+#   accurate:
+#     use_sahi: true
+#     model_name: "yolov8x"
+#     augment: true
+#     batch_size: 8
+#   
+#   balanced:
+#     use_sahi: true
+#     model_name: "yolov8l"
+#     batch_size: 16
