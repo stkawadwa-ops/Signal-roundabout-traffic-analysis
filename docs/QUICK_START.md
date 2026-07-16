@@ -8,7 +8,7 @@ This guide walks you through setting up and running the optimized Signal-Roundab
 
 ## Prerequisites
 
-- **Python**: 3.10+
+- **Python**: 3.11.9+
 - **GPU**: CUDA-capable (recommended for real-time processing)
   - NVIDIA GPU with 6GB+ VRAM (RTX 3060 or better)
   - CUDA 11.8+ and cuDNN 8.6+

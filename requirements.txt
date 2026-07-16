@@ -1,5 +1,5 @@
 # Core Dependencies
-# Requires Python 3.10.x (install from https://www.python.org/downloads/)
+# Requires Python 3.11.9 (install from https://www.python.org/downloads/)
 
 # Computer Vision & Detection (Optimized)
 opencv-python==4.8.1.78
