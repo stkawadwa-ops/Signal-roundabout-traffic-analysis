@@ -59,7 +59,7 @@ nbformat==5.9.2
 # Database (sqlite3 is built into Python, no separate install needed)
 
 # Video Processing Optimization
-av==10.1.0  # PyAV for efficient video codec access
+av==10.0.0  # PyAV for efficient video codec access
 
 # Optional: Advanced Tracking Implementations
 # ByteTrack (recommended for phase 1)
