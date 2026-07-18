@@ -1,68 +1,65 @@
 # Core Dependencies
 # Requires Python 3.11.9 (install from https://www.python.org/downloads/)
 
-# Computer Vision & Detection (Optimized)
-opencv-python==4.8.1.78
-opencv-contrib-python==4.8.1.78
-ultralytics==8.2.0  # Updated for YOLO v10 support
-torch==2.1.0
-torchvision==0.16.0
-torchaudio==2.1.0
+# Computer Vision & Detection
+opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
+ultralytics>=8.2.0
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
 
 # Advanced Tracking & Detection
-# ByteTrack for superior multi-object tracking
-# Installation: pip install git+https://github.com/ifzhang/ByteTrack.git
-# Or use the PyPI package if available
-yolox==0.3.0  # ByteTrack dependency
+# NOTE: yolox requires torch pre-installed + C++ build tools (optional, for ByteTrack only)
+# To install manually after torch: pip install yolox==0.3.0
+# Alternative: pip install git+https://github.com/ifzhang/ByteTrack.git
 
-# Geometric Operations (Shapely)
-Shapely==2.0.2
+# Geometric Operations
+Shapely>=2.0.0
 
 # SAHI - Slicing Aided Hyper Inference for small object detection
-sahi==0.11.0
-
-# BoT-SORT / DeepOCSORT for advanced tracking (via ultralytics)
-# Ultralytics v8.2+ supports multi-tracked outputs natively
+sahi>=0.11.0
 
 # Tracking & Filtering
-scipy==1.11.4
-numpy==1.24.3
-scikit-learn==1.3.2
+scipy>=1.11.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
 
 # Data Processing
-pandas==2.1.3
-pandas-stubs==2.1.1.230928
+pandas>=2.1.0
+pandas-stubs>=2.1.1
 
 # Utilities
-tqdm==4.66.1
-Pillow==10.1.0
-matplotlib==3.8.2
-seaborn==0.13.0
+tqdm>=4.66.0
+Pillow>=10.0.0
+matplotlib>=3.8.0
+seaborn>=0.13.0
 
 # Data Validation
-pydantic==2.5.0
+pydantic>=2.5.0
 
 # Logging & Config
-python-dotenv==1.0.0
-pyyaml==6.0.1
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
 
 # Development
-pytest==7.4.3
-pytest-cov==4.1.0
-black==23.12.0
-flake8==6.1.0
-mypy==1.7.1
-ipython==8.18.1
-jupyter==1.0.0
-nbformat==5.9.2
+pytest>=7.4.0
+pytest-cov>=4.1.0
+black>=23.12.0
+flake8>=6.1.0
+mypy>=1.7.0
+ipython>=8.18.0
+jupyter>=1.0.0
+nbformat>=5.9.0
 
 # Database (sqlite3 is built into Python, no separate install needed)
 
 # Video Processing Optimization
-av==10.0.0  # PyAV for efficient video codec access
+# NOTE: av 10.x requires Python <=3.11; for Python 3.12+ use av>=12.0.0
+av>=10.0.0,<11.0.0
 
 # Optional: Advanced Tracking Implementations
-# ByteTrack (recommended for phase 1)
+# ByteTrack (recommended for real video mode)
 # git+https://github.com/ifzhang/ByteTrack.git
 
 # BoT-SORT (alternative, integrate via ultralytics)
