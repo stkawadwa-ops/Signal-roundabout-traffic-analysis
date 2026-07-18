@@ -404,20 +404,21 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Download pre-trained models
-python scripts/download_models.py
+# Run CPU-safe smoke pipeline (no model download required)
+python scripts/run_pipeline.py --smoke --device cpu --max-frames 20 --output-dir ./data/processed/smoke_run
 
-# Run sample test
-pytest tests/unit/test_video_processing.py -v
+# Run smoke test
+pytest tests/test_smoke_pipeline.py -q
 ```
 
 ### Process Your First Roundabout
 
 ```bash
-python scripts/process_single_roundabout.py \
-    --facility roundabout_1 \
-    --output-dir ./results \
-    --config configs/roundabout_1.yaml
+python scripts/run_pipeline.py \
+    --input-video path/to/video.mp4 \
+    --device auto \
+    --max-frames 300 \
+    --output-dir ./data/processed/run_01
 ```
 
 ---
